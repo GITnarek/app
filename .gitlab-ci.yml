@@ -1,0 +1,43 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  IMAGE_NAME: crawler
+  TAG_LATEST: $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/mt-common:dev
+  TAG_COMMIT: $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/mt-common:$CI_COMMIT_SHORT_SHA
+  DOCKER_TLS_CERTDIR: ""
+
+build_docker_image:
+  stage: build
+  image: docker:20.10.2
+  services:
+    - docker:20.10.2-dind
+  before_script:
+    - apk add --no-cache python3 py3-pip
+    - pip3 install --no-cache-dir awscli
+    - sed -i '/COPY .env.dev/s/^/#/' Dockerfile
+    - rm -f .env.dev
+  script:
+    - aws ecr get-login-password |
+      docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+    - docker pull $TAG_LATEST || true
+    - docker build --cache-from $TAG_LATEST -t $TAG_COMMIT -t $TAG_LATEST .
+    - docker push $TAG_COMMIT
+    - docker push $TAG_LATEST
+  tags:
+    - docker
+  
+deploy:
+  variables:
+    ENVIRONMENT: dev
+  stage: deploy
+  image: dtzar/helm-kubectl:3.6.3
+  services:
+    - docker:20.10.2-dind
+  script:
+    # add EKS cluster
+    - echo "$SECRET_ENVS" > add_values.yaml
+    - helm upgrade -i $CI_PROJECT_NAME .helm/mtcommon -f add_values.yaml -f .helm/mtcommon/values-${ENVIRONMENT}.yaml -n $ENVIRONMENT --set image.tag=$CI_COMMIT_SHORT_SHA --kubeconfig=$KUBECONFIG_DEV
+  tags:
+    - docker

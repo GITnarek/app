@@ -1,0 +1,56 @@
+version: '3'
+services:
+    mt-common-app:
+        build:
+            context: ./
+            target: dev
+        volumes:
+            - .:/var/www/html
+            - /var/www/html/vendor
+            - ./docker/apache/000-default.conf:/etc/apache2/sites-available/000-default.conf
+            - ./docker/tools:/docker/tools
+        ports:
+            - "8080:80"
+        environment:
+            - APP_ENV=local
+            - APP_DEBUG=true
+        container_name: mt-common-app
+        depends_on:
+            - mt-common-mysql
+        hostname: mt-common
+
+    mt-common-mysql:
+        image: 'mysql/mysql-server:8.0'
+        environment:
+            MYSQL_ROOT_PASSWORD: "mtndev"
+            MYSQL_USER: "mt_common"
+            MYSQL_PASSWORD: "mtndev"
+            MYSQL_DATABASE: "mt_common"
+        ports:
+            - "3906:3306"
+        volumes:
+            - 'mysql8:/var/lib/mysql'
+            - './db/init.sql:/docker-entrypoint-initdb.d/01init.sql'
+        container_name: mt-common-mysql
+
+    mt-common-redis:
+        image: redis:7
+        container_name: mt-common-redis
+        ports:
+            - "6382:6379"
+
+    mt-common-log-queue:
+        image: rabbitmq:3-management
+        ports:
+            - "5674:5672"
+            - "15674:15672"
+        container_name: mt-common-log-queue
+
+networks:
+    default:
+        external:
+            name: "mt-network"
+
+volumes:
+    mysql8:
+        driver: local
